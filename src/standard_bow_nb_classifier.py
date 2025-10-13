@@ -19,7 +19,7 @@ def clean_text(text: str) -> str:
 
 
 def load_dataset():
-    df = pd.read_csv("../data/enron_spam_data.csv").dropna(subset=["Message"])
+    df = pd.read_csv("../data/enron_mails.csv").dropna(subset=["Message"])
 
     # combine Subject + Message
     df["full_text"] = (df["Subject"].fillna("") + " " + df["Message"].fillna(""))

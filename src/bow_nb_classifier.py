@@ -18,15 +18,16 @@ def clean_text(text: str) -> str:
 
 
 def load_datasets():
-    df_train = pd.read_csv("../data/enron_spam_data.csv").dropna(subset=["Message"])
-    df_test = pd.read_csv("../data/venky_spam_ham_dataset.csv").dropna(subset=["text"])
+    df_enron = pd.read_csv("../data/enron_mails.csv").dropna(subset=["Message"])
+    df_venky = pd.read_csv("../data/venky_spam_ham_dataset.csv").dropna(subset=["text"])
 
-    df_train["full_text"] = (df_train["Subject"].fillna("") + " " + df_train["Message"].fillna(""))
+    df_enron["full_text"] = (df_enron["Subject"].fillna("") + " " + df_enron["Message"].fillna(""))
+    df_enron["full_text"] = df_enron["full_text"].apply(clean_text)
+    df_venky["text"] = df_venky["text"].apply(clean_text)
 
-    df_train["full_text"] = df_train["full_text"].apply(clean_text)
-    df_test["text"] = df_test["text"].apply(clean_text)
+    df_enron["label_num"] = df_enron["Spam/Ham"].map({"ham": 0, "spam": 1})
 
-    return df_train, df_test
+    return df_enron, df_venky
 
 
 def vectorize_data(X_train, X_test, max_features=5000, min_df=2, max_df=0.95):
@@ -59,17 +60,21 @@ def evaluate_model(y_true, y_pred):
     print(cm)
 
 
-def train_and_evaluate():
-    df_train, df_test = load_datasets()
+def train_and_evaluate(train_enron=1):
+    df_enron, df_venky = load_datasets()
 
-    X_train = df_train["full_text"]
-    y_train = df_train["Spam/Ham"].map({"ham": 0, "spam": 1})
-    X_test = df_test["text"]
-    y_test = df_test["label_num"]
-
-    print("\n==============================")
-    print("MODEL: NAIVE BAYES WITH BIGRAMS + FIXED THRESHOLD")
-    print("==============================")
+    if train_enron == 1:
+        X_train = df_enron["full_text"]
+        y_train = df_enron["label_num"]
+        X_test = df_venky["text"]
+        y_test = df_venky["label_num"]
+        print("\nTraining on Enron, Testing on Venky")
+    else:
+        X_train = df_venky["text"]
+        y_train = df_venky["label_num"]
+        X_test = df_enron["full_text"]
+        y_test = df_enron["label_num"]
+        print("\nTraining on Venky, Testing on Enron")
 
     X_train_bow, X_test_bow = vectorize_data(X_train, X_test)
 
@@ -82,5 +87,6 @@ def train_and_evaluate():
 
     evaluate_model(y_test, y_pred)
 
+
 if __name__ == "__main__":
-    train_and_evaluate()
+    train_and_evaluate(train_enron=0)
