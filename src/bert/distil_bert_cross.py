@@ -1,18 +1,34 @@
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from transformers import (
+    DistilBertTokenizer, DistilBertForSequenceClassification,
+    RobertaTokenizer, RobertaForSequenceClassification,
+    BertTokenizer, BertForSequenceClassification
+)
 import torch
 
 app = FastAPI()
 
-# Load model & tokenizer once
-MODEL_PATH = "./fine_tuned_spam_classifier"
-tokenizer = DistilBertTokenizer.from_pretrained(MODEL_PATH)
-model = DistilBertForSequenceClassification.from_pretrained(MODEL_PATH)
-model.eval()
+DISTIL_MODEL_PATH = "fine_tuned_spam_classifier"
+ROBERTA_MODEL_PATH = "roberta_cross/content/fine_tuned_roberta_spam_classifier"
+BERT_MODEL_PATH = "bert_cross/content/fine_tuned_bert_spam_classifier"
 
+models = {
+    "distilbert": {
+        "tokenizer": DistilBertTokenizer.from_pretrained(DISTIL_MODEL_PATH),
+        "model": DistilBertForSequenceClassification.from_pretrained(DISTIL_MODEL_PATH).eval(),
+    },
+    "roberta": {
+        "tokenizer": RobertaTokenizer.from_pretrained(ROBERTA_MODEL_PATH),
+        "model": RobertaForSequenceClassification.from_pretrained(ROBERTA_MODEL_PATH).eval(),
+    },
+    "bert": {
+        "tokenizer": BertTokenizer.from_pretrained(BERT_MODEL_PATH),
+        "model": BertForSequenceClassification.from_pretrained(BERT_MODEL_PATH).eval(),
+    }
+}
 
-def render_form(result_html=""):
+def render_form(result_html: str = ""):
     return f"""
     <!DOCTYPE html>
     <html>
@@ -38,7 +54,7 @@ def render_form(result_html=""):
                 border-radius: 10px;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             }}
-            textarea, input[type=text] {{
+            textarea, input[type=text], select {{
                 width: 100%;
                 padding: 10px;
                 font-size: 14px;
@@ -84,6 +100,13 @@ def render_form(result_html=""):
     <body>
         <h2>Spam Classifier</h2>
         <form action="/predict_form/" method="post">
+            <label>Model:</label>
+            <select name="model_name" required>
+                <option value="roberta">RoBERTa</option>
+                <option value="bert">BERT-base</option>
+                <option value="distilbert">DistilBERT</option>
+            </select>
+
             <label>Subject:</label>
             <input type="text" name="subject" required>
 
@@ -104,8 +127,17 @@ async def form_page():
 
 
 @app.post("/predict_form/", response_class=HTMLResponse)
-async def predict_form(subject: str = Form(...), content: str = Form(...)):
+async def predict_form(
+    model_name: str = Form(...),
+    subject: str = Form(...),
+    content: str = Form(...),
+):
     text = subject + " " + content
+
+    model_info = models.get(model_name)
+    tokenizer = model_info["tokenizer"]
+    model = model_info["model"]
+
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128)
 
     with torch.no_grad():
@@ -115,11 +147,11 @@ async def predict_form(subject: str = Form(...), content: str = Form(...)):
 
     label = "spam" if pred_class == 1 else "ham"
     confidence = round(probs[0][pred_class].item(), 4) * 100
-
     color_class = "spam" if label == "spam" else "ham"
 
     result_html = f"""
     <div class='result {color_class}'>
+        <b>Model:</b> {model_name.upper()} <br>
         <b>Prediction:</b> {label.upper()} <br>
         <b>Confidence:</b> {confidence:.2f}%
     </div>
