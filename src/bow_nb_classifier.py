@@ -7,7 +7,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from imblearn.over_sampling import SMOTE
 from matplotlib import pyplot as plt
 
-
+#formatting text
 def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
@@ -20,7 +20,7 @@ def clean_text(text: str) -> str:
 
     return text.strip()
 
-
+#preparing dataset
 def load_datasets():
     df_enron = pd.read_csv("../data/enron_mails.csv").dropna(subset=["Message"])
     df_venky = pd.read_csv("../data/venky_spam_ham_dataset.csv").dropna(subset=["text"])
@@ -81,19 +81,22 @@ class SimpleNaiveBayes:
         classes = np.unique(y)
 
         for c in classes:
+            #getting documents of class
             X_c = X[y == c]
             word_counts = X_c.sum(axis=0)
             total_words = word_counts.sum()
 
-            # Laplace smoothing
-            probs = (word_counts + 1) / (total_words + n_words)
+            #laplace smoothing
+            probs = (word_counts + 1) / (total_words + n_words) #likelihood of word appearing in class
             self.class_word_probs[c] = probs
-            self.class_priors[c] = X_c.shape[0] / n_docs
+            self.class_priors[c] = X_c.shape[0] / n_docs    #likelihood of being that class
 
     def predict(self, X):
         results = []
+        #for document
         for x in X:
             scores = {}
+            #for each class
             for c in self.class_word_probs:
                 log_prob = np.log(self.class_priors[c])
                 log_prob += np.sum(x * np.log(self.class_word_probs[c]))
@@ -123,6 +126,7 @@ def evaluate_model(y_true, y_pred):
 def train_and_evaluate(train_enron=1, use_smote=False):
     df_enron, df_venky = load_datasets()
 
+    #which to train on
     if train_enron == 1:
         X_train = df_enron["full_text"]
         y_train = df_enron["label_num"].to_numpy()
