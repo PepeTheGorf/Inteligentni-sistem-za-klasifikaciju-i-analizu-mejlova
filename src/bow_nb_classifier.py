@@ -123,22 +123,33 @@ def evaluate_model(y_true, y_pred):
     disp.plot()
     plt.show()
 
-def train_and_evaluate(train_enron=1, use_smote=False):
+def train_and_evaluate(train_enron=1, use_smote=False, mode="cross"):
     df_enron, df_venky = load_datasets()
 
-    #which to train on
-    if train_enron == 1:
-        X_train = df_enron["full_text"]
-        y_train = df_enron["label_num"].to_numpy()
-        X_test = df_venky["text"]
-        y_test = df_venky["label_num"].to_numpy()
-        print("\nTraining on Enron, Testing on Venky")
+    if mode == "cross":
+        if train_enron == 1:
+            X_train = df_enron["full_text"]
+            y_train = df_enron["label_num"].to_numpy()
+            X_test = df_venky["text"]
+            y_test = df_venky["label_num"].to_numpy()
+            print("\nTraining on Enron, Testing on Venky")
+        else:
+            X_train = df_venky["text"]
+            y_train = df_venky["label_num"].to_numpy()
+            X_test = df_enron["full_text"]
+            y_test = df_enron["label_num"].to_numpy()
+            print("\nTraining on Venky, Testing on Enron")
+
+    elif mode == "split":
+        from sklearn.model_selection import train_test_split
+        #enron 80/20 split
+        X_train, X_test, y_train, y_test = train_test_split(
+            df_enron["full_text"], df_enron["label_num"].to_numpy(),
+            test_size=0.2, random_state=42, stratify=df_enron["label_num"]
+        )
+        print("\nTraining on 80% and testing on 20% of Enron")
     else:
-        X_train = df_venky["text"]
-        y_train = df_venky["label_num"].to_numpy()
-        X_test = df_enron["full_text"]
-        y_test = df_enron["label_num"].to_numpy()
-        print("\nTraining on Venky, Testing on Enron")
+        raise ValueError("mode must be 'cross' or 'split'")
 
     bow = SimpleBoW()
     X_train_bow = bow.fit_transform(X_train)
@@ -156,11 +167,16 @@ def train_and_evaluate(train_enron=1, use_smote=False):
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("WITHOUT SMOTE")
+    print("Cross WITHOUT SMOTE")
     print("=" * 50)
     train_and_evaluate(train_enron=0, use_smote=False)
 
     print("\n" + "=" * 50)
-    print("WITH SMOTE")
+    print("Cross WITH SMOTE")
     print("=" * 50)
     train_and_evaluate(train_enron=0, use_smote=True)
+
+    print("=" * 50)
+    print("Standard WITHOUT SMOTE")
+    print("=" * 50)
+    train_and_evaluate(train_enron=0, use_smote=False)
