@@ -5,8 +5,12 @@ import torch.nn as nn
 import os
 from datasets import Dataset
 from transformers import (
+    BertTokenizer,
+    BertForSequenceClassification,
     DistilBertTokenizer,
     DistilBertForSequenceClassification,
+    RobertaTokenizer,
+    RobertaForSequenceClassification,
     TrainingArguments,
     Trainer,
     EarlyStoppingCallback
@@ -15,13 +19,31 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report, f1_score, \
     recall_score, confusion_matrix
 import warnings
-#from google.colab import drive
+from google.colab import drive
 
 warnings.filterwarnings('ignore')
 
 os.environ["WANDB_DISABLED"] = "true"
 
-#drive.mount('/content/drive')
+drive.mount('/content/drive')
+
+MODEL_CONFIGS = {
+    'bert': {
+        'name': 'bert-base-uncased',
+        'tokenizer': BertTokenizer,
+        'model': BertForSequenceClassification
+    },
+    'distilbert': {
+        'name': 'distilbert-base-uncased',
+        'tokenizer': DistilBertTokenizer,
+        'model': DistilBertForSequenceClassification
+    },
+    'roberta': {
+        'name': 'roberta-base',
+        'tokenizer': RobertaTokenizer,
+        'model': RobertaForSequenceClassification
+    }
+}
 
 def prepare_datasets(X_train, y_train, X_val, y_val, X_test, y_test):
     train_dict = {'text': X_train.tolist(), 'label': y_train.tolist()}
@@ -62,39 +84,44 @@ def compute_metrics(eval_pred):
         'spam_recall': spam_recall
     }
 
-def train_with_trainer(X_train, y_train, X_test, y_test):
-    MODEL_NAME = 'distilbert-base-uncased'
+def train_with_trainer(X_train, y_train, X_test, y_test, model_type='bert', use_cross_dataset=True):
+    config = MODEL_CONFIGS[model_type]
+    MODEL_NAME = config['name']
+    TokenizerClass = config['tokenizer']
+    ModelClass = config['model']
+
     MAX_LENGTH = 128
     BATCH_SIZE = 16
     EPOCHS = 3
-    LEARNING_RATE = 5e-5
+    LEARNING_RATE = 2e-5
     WEIGHT_DECAY = 0.01
 
-    print(f"\nHyperparameters:")
-    print(f"Model: {MODEL_NAME}")
-    print(f"Max Length: {MAX_LENGTH}")
-    print(f"Batch Size: {BATCH_SIZE}")
-    print(f"Epochs: {EPOCHS}")
-    print(f"Learning Rate: {LEARNING_RATE}")
-    print(f"Weight Decay: {WEIGHT_DECAY}")
+    print(f"\nUsing model: {MODEL_NAME} ({model_type.upper()})")
+    print(f"Training mode: {'Cross-dataset' if use_cross_dataset else 'Single dataset'}")
 
-    X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(
-        X_train, y_train, test_size=0.15, stratify=y_train, random_state=42
-    )
+    if use_cross_dataset:
+        X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(
+            X_train, y_train, test_size=0.15, stratify=y_train, random_state=42
+        )
+        X_test_final, y_test_final = X_test, y_test
+        dataset_info = "Training: Enron | Validation: Enron (15%) | Testing: Venky"
+    else:
+        X_temp, X_test_final, y_temp, y_test_final = train_test_split(
+            X_train, y_train, test_size=0.15, stratify=y_train, random_state=42
+        )
+        X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(
+            X_temp, y_temp, test_size=0.176, stratify=y_temp, random_state=42  # 0.176 * 0.85 ≈ 0.15
+        )
+        dataset_info = "Training: Enron (70%) | Validation: Enron (15%) | Testing: Enron (15%)"
 
-    print(f"\n{'=' * 60}")
-    print("DATASET SPLITS")
-    print(f"{'=' * 60}")
-    print(f"Train: {len(X_train_split)} (Spam: {sum(y_train_split)})")
-    print(f"Val: {len(X_val_split)} (Spam: {sum(y_val_split)})")
-    print(f"Test (Venky): {len(X_test)} (Spam: {sum(y_test)})")
+    print(f"Dataset split: {dataset_info}\n")
 
-    tokenizer = DistilBertTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer = TokenizerClass.from_pretrained(MODEL_NAME)
 
     train_dataset, val_dataset, test_dataset = prepare_datasets(
         X_train_split, y_train_split,
         X_val_split, y_val_split,
-        X_test, y_test
+        X_test_final, y_test_final
     )
 
     print("\nTokenizing datasets...")
@@ -115,7 +142,7 @@ def train_with_trainer(X_train, y_train, X_test, y_test):
     val_dataset.set_format('torch', columns=['input_ids', 'attention_mask', 'label'])
     test_dataset.set_format('torch', columns=['input_ids', 'attention_mask', 'label'])
 
-    model = DistilBertForSequenceClassification.from_pretrained(
+    model = ModelClass.from_pretrained(
         MODEL_NAME,
         num_labels=2
     )
@@ -149,7 +176,10 @@ def train_with_trainer(X_train, y_train, X_test, y_test):
     )
 
     print("\n" + "=" * 60)
-    print("TRAINING ON ENRON")
+    if use_cross_dataset:
+        print("TRAINING ON ENRON")
+    else:
+        print("TRAINING ON ENRON (70%)")
     print("=" * 60)
 
     trainer.train()
@@ -163,12 +193,15 @@ def train_with_trainer(X_train, y_train, X_test, y_test):
     print(f"Validation Spam Recall: {val_results['eval_spam_recall']:.4f}")
 
     print("\n" + "=" * 60)
-    print("TESTING ON VENKY DATASET")
+    if use_cross_dataset:
+        print("TESTING ON VENKY DATASET")
+    else:
+        print("TESTING ON ENRON (15%)")
     print("=" * 60)
 
     predictions = trainer.predict(test_dataset)
     predicted_labels = np.argmax(predictions.predictions, axis=1)
-    true_labels = (test_dataset['label'])
+    true_labels = test_dataset['label']
 
     print("\nClassification Report:")
     print(classification_report(
@@ -191,14 +224,21 @@ def train_with_trainer(X_train, y_train, X_test, y_test):
     print(f"F1 (spam): {test_f1:.4f}")
     print(f"Confusion Matrix: {cm}")
 
-    print("\nSaving model...")
-    model.save_pretrained('./fine_tuned_spam_classifier')
-    tokenizer.save_pretrained('./fine_tuned_spam_classifier')
+    model_save_path = f'./fine_tuned_{model_type}_spam_classifier'
+    print(f"\nSaving model to {model_save_path}...")
+    model.save_pretrained(model_save_path)
+    tokenizer.save_pretrained(model_save_path)
 
     return model, tokenizer, trainer
 
 
 def main():
+    SELECTED_MODEL = 'distilbert'
+    USE_CROSS_DATASET = True
+
+    print(f"Selected model type: {SELECTED_MODEL}")
+    print(f"Dataset mode: {'Cross-dataset' if USE_CROSS_DATASET else 'Single dataset'}\n")
+
     df_enron = pd.read_csv("/content/drive/MyDrive/EmailDatasets/enron_mails.csv").dropna(subset=['Message'])
     X_enron = df_enron['Message'].values
     y_enron = df_enron['Spam/Ham'].map({'ham': 0, 'spam': 1}).values
@@ -207,7 +247,12 @@ def main():
     X_venky = df_venky['text'].values
     y_venky = df_venky['label'].map({'ham': 0, 'spam': 1}).values
 
-    model, tokenizer, trainer = train_with_trainer(X_enron, y_enron, X_venky, y_venky)
+    model, tokenizer, trainer = train_with_trainer(
+        X_enron, y_enron,
+        X_venky, y_venky,
+        model_type=SELECTED_MODEL,
+        use_cross_dataset=USE_CROSS_DATASET
+    )
     return model, tokenizer, trainer
 
 if __name__ == "__main__":
