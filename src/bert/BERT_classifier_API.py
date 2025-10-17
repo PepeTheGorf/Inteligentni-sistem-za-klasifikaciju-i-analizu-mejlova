@@ -121,6 +121,8 @@ def render_form(result_html: str = ""):
     """
 
 
+# uvicorn BERT_classifier_API:app --reload
+
 @app.get("/", response_class=HTMLResponse)
 async def form_page():
     return render_form()
